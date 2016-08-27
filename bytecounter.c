@@ -10,10 +10,6 @@
  *     11 characters written
  */
 
-MODULE_DESCRIPTION("bytecounter: counts bytes written to a special file and reports on read");
-MODULE_AUTHOR("Quint Guvernator <quint at guvernator.net>");
-MODULE_LICENSE("GPL");
-
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h> /* printk() */
@@ -24,6 +20,10 @@ MODULE_LICENSE("GPL");
 #include <asm/uaccess.h> /* copy_from/to_user */
 
 #define MODNAME "bytecounter"
+
+MODULE_DESCRIPTION(MODNAME ": counts bytes written to a special file and reports on read");
+MODULE_AUTHOR("Quint Guvernator <quint at guvernator.net>");
+MODULE_LICENSE("GPL");
 
 /* stores up to ten SI-exabytes */
 #define BUFSIZE 20
@@ -52,7 +52,7 @@ static int bc_major = 62;
 static int is_open = 0;
 
 /* running count of number of writes */
-static unsigned long int bytecounter = 0;
+static uint64_t bytecounter = 0;
 
 int bc_init(void)
 {
@@ -91,16 +91,18 @@ int bc_release(struct inode *inode, struct file *filp)
 ssize_t bc_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 {
 	const int bufsize = 20;
+	char *msg;
+	int len;
+
 	if (count == 0)
 		return 0;
 
-	char *msg = kmalloc(bufsize, GFP_KERNEL);
+	msg = kmalloc(bufsize, GFP_KERNEL);
 	if (!msg)
 		return -ENOMEM;
 
 	/* turn the uint counter into a string of ASCII numeric characters */
-	int len = snprintf(msg, bufsize, "%lu", bytecounter);
-	int written = 0;
+	len = snprintf(msg, bufsize, "%llu", bytecounter);
 
 	/* move forward to the fpos-th element and copy */
 	len -= *f_pos;
@@ -108,13 +110,12 @@ ssize_t bc_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 	if (len > 0) {
 		msg += *f_pos;
 		copy_to_user(buf, msg, len);
-		written = len;
 	}
 
 	kfree(msg);
 
-	*f_pos += written;
-	return written;
+	*f_pos += len;
+	return len;
 }
 
 ssize_t bc_write(struct file *filp, const char __user *buf, size_t count, loff_t *f_pos)
